@@ -1,0 +1,112 @@
+NOTES:
+1 - Creat an empty directory for each appliction that requires URL re-write/AAR example:  inetpub\wwwroot\sonarr
+2 - Create a "Virtual Directory" in IIS for EACH application that requires AAR which points to the physical directory that you created above
+3 - Set application settings at the applcation level!!! DO NOT set URL rewrite rules at server or website level
+4 - you first thave to set the SITE server variables.  This is done at the SITE level (See screenshot) and example in first block below.
+5 - You need to configure each application individually as they each require unique headers
+
+Server Varables example:  https://imgur.com/a/9LaIr
+
+These values are set at site level and the file resides in C:\Windows\System32\inetsrv\Config
+
+```
+        <rewrite>
+            <allowedServerVariables>
+                <add name="HTTP_ACCEPT_ENCODING" />
+                <add name="HTTP_X_ORIGINAL_ACCEPT_ENCODING" />
+                <add name="HTTP_X_FORWARDED_HOST" />
+                <add name="HTTP_X_FORWARDED_SCHEMA" />
+                <add name="HTTP_X_FORWARDED_PROTO" />
+                <add name="HTTP_X_FORWARDED_SSL" />
+                <add name="HTTP_X_FORWARDED_FOR" />
+                <add name="HTTP_X_REAL_IP" />
+                <add name="HTTP_X_DELUGE_BASE" />
+                <add name="include" />
+                <add name="host" />
+                <add name="proxy_hide_header" />
+                <add name="HTTP_X_FRAME_OPTIONS" />
+            </allowedServerVariables>
+        </rewrite>
+        ```
+
+
+
+
+This is an example of a web.confg file that would reside in the sub application directory example \inetpub\wwwroot\sonarr\web.config
+In theory, you could place the below file in that directory, replace your IP:PORT values, and IIS would be configured for AAR/URL rewrtie for that applcation. 
+
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <system.webServer>
+        <rewrite>
+             <rules>
+                <clear />
+                <rule name="ReverseProxyInboundRulesonarr" stopProcessing="true">
+                    <match url="(.*)" />
+                    <conditions logicalGrouping="MatchAll" trackAllCaptures="false" />
+                    <serverVariables>
+                        <set name="HTTP_X_REAL_IP" value="$remote_addr" />
+                        <set name="HTTP_X_FORWARDED_FOR" value="$proxy_add_x_forwarded_for" />
+                        <set name="HTTP_X_ORIGINAL_ACCEPT_ENCODING" value="{HTTP_ACCEPT_ENCODING}" />
+                        <set name="HTTP_ACCEPT_ENCODING" value="" />
+                    </serverVariables>
+                    <action type="Rewrite" url="http://192.168.1.20:38084/sonarr/{R:1}" />
+                </rule>
+            </rules>
+			
+			<outboundRules>
+                <clear />
+                <rule name="Restore Encoding" preCondition="Restore HTTP_ACCEPT_ENCODING}" enabled="true">
+                    <match serverVariable="HTTP_ACCEPT_ENCODING" pattern="^(.+)" />
+                    <conditions logicalGrouping="MatchAll" trackAllCaptures="true" />
+                    <action type="Rewrite" value="{HTTP_X_ORIGINAL_ACCEPT_ENCODING}" />
+                </rule>
+                
+				<rule name="ReverseProxyOutboundsonarr" preCondition="ResponseIsHtml1" patternSyntax="ECMAScript">
+                    <match filterByTags="A, Area, Base, Form, Head, IFrame, Img, Input, Link, Script" pattern="^http(s)?://192.168.1.20:38084/sonarr/(.*)" />
+                    <conditions logicalGrouping="MatchAll" trackAllCaptures="true" />
+                    <action type="Rewrite" value="http{R:1}://yourcomain.com/sonarr/{R:2}" />
+                </rule>
+				
+				<preConditions>
+                    <remove name="Restore HTTP_ACCEPT_ENCODING}" />
+                    <remove name="ResponselsHTML1" />
+                    <remove name="ResponseIsHtml1" />
+                    <remove name="NeedsRestoringAcceptEncoding" />
+					<preCondition name="ResponseIsHtml1">
+						<add input="{RESPONSE_CONTENT_TYPE}" pattern="^text/html" />
+					</preCondition>
+					<preCondition name="Restore HTTP_ACCEPT_ENCODING}">
+                        <add input="{RESPONSE_CONTENT_TYPE}" pattern=".+" />
+					</preCondition>
+				</preConditions>
+            </outboundRules>
+            <rewriteMaps>
+                <remove name="FTPtoVileVista" />
+            </rewriteMaps>
+           
+        </rewrite>
+        <defaultDocument>
+            <files>
+                <clear />
+                <add value="phpinfo.php" />
+                <add value="Default.htm" />
+                <add value="Default.asp" />
+                <add value="index.htm" />
+                <add value="iisstart.htm" />
+                <add value="default.aspx" />
+                <add value="index.php" />
+            </files>
+        </defaultDocument>
+        <security>
+            <authentication>
+                <anonymousAuthentication enabled="false" />
+            </authentication>
+        </security>
+        <urlCompression doDynamicCompression="false" />
+    </system.webServer>
+</configuration>
+
+```
